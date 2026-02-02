@@ -69,7 +69,7 @@ double compute_col_mean(double **X, int r, int c) {
 
 double compute_col_std(double **X, int r, int c, double mean) {
     double sum = 0.0;
-    for (int i = 0; i < r, i++) {
+    for (int i = 0; i < r; i++) {
         double diff = X[i][c] - mean;
         sum += diff * diff;
     }
@@ -102,7 +102,7 @@ void generate_rand_matrix(double **X, int n) {
 void zsn(double **X, int r, int c) {
     for (int i = 0; i < c; i++) {
         double a = compute_col_mean(X, r, i);
-        double b = compute_col_std(X, c, a);
+        double b = compute_col_std(X, r, c, a);
 
         for (int j = 0; j < r; j++) {
             if (b != 0.0) {
