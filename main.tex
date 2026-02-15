@@ -1,0 +1,358 @@
+\documentclass[journal]{IEEEtran}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+
+% Code listing settings
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single
+}
+
+\begin{document}
+
+% Title
+\title{CMSC 180 Laboratory Research Problem 01:\\
+Serial Computation of Order Q Moving Average}
+
+% Author
+\author{Jan Clarisse B. Victoria, 2022-08601\\
+Institute of Computer Science, UPLB\\
+\texttt{jbvictoria1@up.edu.ph}}
+
+\maketitle
+
+\begin{abstract}
+This report presents a serial implementation for computing mean square errors (MSEs) of Order Q Moving Averages for matrix columns. The program was tested with different matrix sizes to measure runtime performance and verify computational complexity. Results show the algorithm has O(n³) complexity, with practical limits encountered at n=8,000.
+\end{abstract}
+
+\section{Introduction}
+
+This laboratory exercise implements a program to compute the mean square error (MSE) vector of Order Q Moving Averages for columns of a square matrix.
+
+\subsection{Problem Definition}
+
+Given an $n \times n$ matrix $\mathbf{X}$, we compute vector $\mathbf{p}$ where each element is:
+\begin{equation}
+p_j = \sqrt{\frac{1}{n-q} \sum_{i=q+1}^{n} (X_{ij} - MA_i(q))^2}
+\end{equation}
+
+where the moving average $MA_i(q)$ is:
+\begin{equation}
+MA_i(q) = \frac{1}{q} \sum_{k=i-q}^{i-1} X_{kj}
+\end{equation}
+
+\section{Implementation}
+
+\subsection{Student Number Personalization}
+
+For student number \textbf{2022-08601}, the sorted digits in non-increasing order are: 8, 6, 1, 0, 0. Therefore, $S_1 = 8$ and $S_2 = 6$.
+
+The personalized $q$ value is computed using:
+\begin{equation}
+q = \max\left(\frac{n}{2}, \min\left(86 \times \frac{n}{100}, \frac{3n}{4}\right)\right)
+\end{equation}
+
+After simplification, this yields $q = 0.75n$ for all test cases.
+
+\subsection{Algorithm Structure}
+
+The implementation consists of two main components:
+
+\textbf{Function mse\_ma():} This function computes the MSE vector by:
+\begin{enumerate}
+    \item Processing each column $j$ of the matrix
+    \item For each row $i \geq q$, calculating the moving average of the previous $q$ elements
+    \item Computing the squared error between the current element and its moving average
+    \item Taking the root mean square of all errors in the column
+\end{enumerate}
+
+\textbf{Main program:} The driver program:
+\begin{enumerate}
+    \item Reads the matrix size $n$ from user input
+    \item Generates a random $n \times n$ matrix with non-zero integers (1-100)
+    \item Calculates the personalized $q$ value
+    \item Executes three timed runs of mse\_ma()
+    \item Outputs the runtime statistics for each trial
+\end{enumerate}
+
+\subsection{Testing Environment}
+
+\begin{itemize}
+    \item Programming Language: C
+    \item Processor: Apple M1 Pro
+    \item RAM: 16GB
+    \item Operating System: macOS
+\end{itemize}
+
+\section{Results}
+
+\subsection{Runtime Measurements}
+
+Table I presents the runtime measurements for different matrix sizes. Three runs were performed for each size to ensure consistency.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.3}
+\caption{Runtime Performance Data}
+\centering
+\footnotesize
+\begin{tabular}{|c|c|c|c|c|}
+\hline
+\textbf{N} & \textbf{Trial 1} & \textbf{Trial 2} & \textbf{Trial 3} & \textbf{Average} \\
+ & \textbf{(s)} & \textbf{(s)} & \textbf{(s)} & \textbf{(s)} \\
+\hline
+100 & 0.00164 & 0.00148 & 0.00094 & 0.00135 \\
+\hline
+200 & 0.00643 & 0.00647 & 0.00686 & 0.00659 \\
+\hline
+300 & 0.02100 & 0.02045 & 0.02064 & 0.02070 \\
+\hline
+400 & 0.05660 & 0.04849 & 0.04843 & 0.05117 \\
+\hline
+500 & 0.10866 & 0.09496 & 0.09501 & 0.09954 \\
+\hline
+600 & 0.17059 & 0.16493 & 0.16472 & 0.16675 \\
+\hline
+700 & 0.27150 & 0.26272 & 0.26228 & 0.26550 \\
+\hline
+800 & 0.39904 & 0.39126 & 0.41017 & 0.40015 \\
+\hline
+900 & 0.56826 & 0.55990 & 0.55815 & 0.56210 \\
+\hline
+1,000 & 0.78172 & 0.76787 & 0.76967 & 0.77309 \\
+\hline
+2,000 & 6.19356 & 6.16841 & 6.16592 & 6.17597 \\
+\hline
+4,000 & 49.86079 & 49.80325 & 49.83904 & 49.83436 \\
+\hline
+8,000 & 791.20604 & 792.39634 & 798.13572 & 793.91270 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Complexity Analysis Data}
+
+Table II shows the theoretical O(n³) runtime predictions using two different baselines: n=100 and n=8000. These values are compared against the measured average runtime.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.3}
+\caption{Theoretical Complexity Predictions}
+\centering
+\footnotesize
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{N} & \textbf{Average} & \textbf{Complexity} & \textbf{Complexity} \\
+ & \textbf{(s)} & \textbf{(n=100)} & \textbf{(max n)} \\
+\hline
+100 & 0.00135 & 0.00135 & 0.00155 \\
+\hline
+200 & 0.00659 & 0.01083 & 0.01241 \\
+\hline
+300 & 0.02070 & 0.03655 & 0.04187 \\
+\hline
+400 & 0.05117 & 0.08664 & 0.09924 \\
+\hline
+500 & 0.09954 & 0.16921 & 0.19383 \\
+\hline
+600 & 0.16675 & 0.29239 & 0.33493 \\
+\hline
+700 & 0.26550 & 0.46431 & 0.53186 \\
+\hline
+800 & 0.40015 & 0.69308 & 0.79391 \\
+\hline
+900 & 0.56210 & 0.98682 & 1.13040 \\
+\hline
+1,000 & 0.77309 & 1.35367 & 1.55061 \\
+\hline
+2,000 & 6.17597 & 10.82933 & 12.40489 \\
+\hline
+4,000 & 49.83436 & 86.63467 & 99.23909 \\
+\hline
+8,000 & 793.91270 & 693.07733 & 793.91270 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Performance Analysis}
+
+Figure 1 visualizes the input size against the average runtime and time complexity using both n=100 and n=8000 baselines. The measured data closely follows the theoretical O(n³) curves, validating the complexity analysis. Table II provides the detailed numerical comparison between measured runtime and theoretical predictions.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=3.5in]{performance_graph.png}
+\caption{Runtime performance graph visualizing the input size against the average runtime and time complexity (for both n=100 and n=8000 baselines)}
+\label{fig:performance}
+\end{figure}
+
+Key performance metrics:
+\begin{itemize}
+    \item Complexity exponent: 3.0 (confirming O(n³))
+    \item Runtime at n=100: 0.00135 seconds
+    \item Runtime at n=8,000: 793.91 seconds (13.2 minutes)
+    \item Doubling n increases runtime by approximately 8x
+\end{itemize}
+
+\section{Analysis and Discussion}
+
+\subsection{Research Question 1: Complexity Analysis}
+
+\textit{What is the complexity of solving vector p for an $n \times n$ matrix?}
+
+\vspace{0.5em}
+The algorithm has a time complexity of O(n³). This comes from the three nested loops in the program. The outer loop goes through each of the n columns. For each column, the middle loop processes the rows from position q to n. Inside that, there's another loop that calculates the moving average by summing q elements. Since q is 0.75n in our case, we essentially have n × n × n operations, which gives us cubic complexity. This means that when we double the matrix size, the runtime increases by about 8 times (2³ = 8), which matches what we observed in the actual test runs.
+
+\subsection{Research Question 2: Scalability Limits}
+
+\textit{Were you able to run up to n > 20,000? Can you make it higher?}
+
+\vspace{0.5em}
+No, the program could not run beyond n=8,000. At this size, each test run took around 13 minutes to complete, which was already quite long. If we tried to run n=16,000, based on the cubic complexity, it would take approximately 1.76 hours per run. For n=20,000, it would take about 3.45 hours, which is impractical for a simple lab exercise. The main problem is time - each time we double the input size, the runtime increases by 8 times because of the O(n³) complexity.
+
+There's also a memory issue, though less critical. At n=8,000, the program needs 256 MB of memory to store the matrix. At n=20,000, this would increase to 1.6 GB, which could start causing problems depending on available RAM.
+
+To make the program handle larger inputs, the best solution would be to optimize the algorithm itself. Instead of recalculating the entire moving average sum each time, we could use a sliding window approach that just adds the new element and removes the old one. This would reduce the complexity from O(n³) to O(n²), making the program much faster. Other improvements like better compiler settings or memory management could help too, but fixing the algorithm would give the biggest improvement.
+
+\subsection{Research Question 3: Empirical Validation}
+
+\textit{Do the runtime measurements agree with complexity predictions?}
+
+\vspace{0.5em}
+Yes, the measured runtimes generally agree with the O(n³) complexity prediction. When looking at how the runtime changes as we double the input size, we expect it to increase by 8 times (since 2³ = 8). In most of the test runs, this is what happened. For example, going from n=1,000 to n=2,000 showed a 7.99x increase, and from n=2,000 to n=4,000 showed an 8.07x increase - both very close to the expected 8x.
+
+However, there are some differences at the extremes. For small values like going from n=100 to n=200, the increase was only 4.88x instead of 8x. This is because when the program runs very quickly (just milliseconds), the fixed startup time of the program becomes significant compared to the actual computation time. On the other end, going from n=4,000 to n=8,000 showed a 15.93x increase, which is much more than expected. This happens because at larger sizes, the matrix becomes too big to fit in the computer's cache memory, so accessing the data becomes much slower.
+
+Overall, the middle range of our tests (n=200 to n=4,000) showed excellent agreement with the theory, confirming that the algorithm truly has O(n³) complexity.
+
+\subsection{Research Question 4: Serial Optimization}
+
+\textit{How can we improve performance without using extra processors or cores?}
+
+\vspace{0.5em}
+There are several ways to make the program faster without using parallel processing. The most effective improvement would be to change how we calculate the moving average. Currently, every time we need a moving average, the program adds up all q elements from scratch. This is wasteful because most of those elements were already included in the previous moving average calculation. Instead, we could keep a running sum and just add the new element while removing the oldest one. This simple change would reduce the complexity from O(n³) to O(n²), making the program dramatically faster - potentially 8,000 times faster for n=8,000.
+
+Other improvements could also help, though not as much. Using compiler optimization flags like -O3 would make the code run about 1.5 to 3 times faster by letting the compiler optimize the loops and other operations. We could also be smarter about how we access memory to take advantage of the computer's cache system, which could give us another 2-5x speedup. Small code improvements like precomputing 1/q instead of dividing by q every time would help a bit too.
+
+If we combined all these optimizations, especially the sliding window approach, we could make the program fast enough to handle n=20,000 or even larger matrices on the same computer hardware.
+
+\section{Conclusion}
+
+This laboratory exercise successfully implemented and analyzed a serial algorithm for computing mean square errors of Order-q moving averages across matrix columns, providing empirical validation of theoretical complexity analysis.
+
+\section*{LIST OF COLLABORATORS}
+
+\textbf{Ricky Vince Narvasa} provided assistance with understanding the moving average formula and algorithm implementation.
+
+\textbf{GitHub Copilot} assisted with code debugging and optimization suggestions.
+
+\textbf{Google Gemini} provided support for LaTeX formatting and document organization.
+
+\appendices
+
+\section{Source Code}
+
+\begin{lstlisting}[language=C]
+// VICTORIA, Jan Clarisse B.
+// CMSC 180 - CD1L
+// 2022-08601
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <time.h>
+
+// Calculate q using student number 2022-08601
+int get_q(int n) {
+    int s1 = 8, s2 = 6;
+    int val = (86 * n) / 100;
+    int limit = (3 * n) / 4;
+    int min_val = (val < limit) ? val : limit;
+    int q = (n / 2 > min_val) ? (n / 2) : min_val;
+    if (q >= n) q = n - 1;
+    if (q < 1) q = 1;
+    return q;
+}
+
+// Compute MSE vector p from matrix X
+double* mse_ma(int *X, int q, int m, int n) {
+    double *p = (double*)malloc(n * sizeof(double));
+    if (!p) exit(1);
+
+    // Process each column
+    for (int j = 0; j < n; j++) {
+        double sum_sq = 0.0;
+
+        // Process rows from q to m
+        for (int i = q; i < m; i++) {
+            double current_sum = 0.0;
+
+            // Calculate moving average
+            for (int k = i - q; k < i; k++) {
+                current_sum += X[k * n + j];
+            }
+
+            double ma = current_sum / q;
+            double diff = X[i * n + j] - ma;
+            sum_sq += diff * diff;
+        }
+
+        p[j] = sqrt(sum_sq / (m - q));
+    }
+    return p;
+}
+
+int main() {
+    int n;
+    printf("Enter n: ");
+    scanf("%d", &n);
+
+    // Allocate matrix
+    int *X = (int*)malloc((size_t)n * n * sizeof(int));
+    if (!X) {
+        printf("Memory allocation failed!\n");
+        return 1;
+    }
+
+    // Fill with random non-zero integers
+    srand(time(NULL));
+    for (size_t i = 0; i < (size_t)n * n; i++) {
+        X[i] = (rand() % 100) + 1;
+    }
+
+    int q = get_q(n);
+
+    // Run 3 trials
+    double trials[3];
+    for (int trial = 0; trial < 3; trial++) {
+        clock_t start = clock();
+        double *p = mse_ma(X, q, n, n);
+        clock_t end = clock();
+        trials[trial] = (double)(end - start) 
+                        / CLOCKS_PER_SEC;
+        free(p);
+    }
+
+    // Calculate and print results
+    double avg = (trials[0] + trials[1] + trials[2]) / 3.0;
+    
+    printf("\nResults for n=%d:\n", n);
+    printf("Trial 1: %.6f s\n", trials[0]);
+    printf("Trial 2: %.6f s\n", trials[1]);
+    printf("Trial 3: %.6f s\n", trials[2]);
+    printf("Average: %.6f s\n", avg);
+
+    free(X);
+    return 0;
+}
+\end{lstlisting}
+
+\begin{thebibliography}{1}
+\bibitem{pabico}
+J.~P. Pabico, ``CMSC 180: Introduction to Parallel Computing,'' ICS, UPLB, 2026.
+\end{thebibliography}
+
+\end{document}
