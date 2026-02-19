@@ -22,6 +22,8 @@ void zsn(double **X, int r, int c);
 
 void compute_col_stats(double **X, int r, int c, double *mean, double *std);
 void zsn_welford(double **X, int r, int c);
+void *zsn_thread(void *arg);
+void print_matrix_preview(double **X, int r, int c, int limit);
 
 // thread structure for data computation
 typedef struct {
@@ -33,7 +35,7 @@ typedef struct {
 
 int main() {
     // n is the user input variable
-    int n;
+    int n, num_threads;
     // time variables
     clock_t time_before, time_after;
     double time_elapsed;
@@ -42,8 +44,11 @@ int main() {
     printf("Enter n-size for matrix: ");
     scanf("%d", &n);
 
+    printf("Enter number of threads: ");
+    scanf("%d", &num_threads);
+
     // check if n is positive
-    if (n < 0) return 1;
+    if (n < 0 || num_threads <= 0) return 1;
 
     // random number generator
     srand(time(NULL));
@@ -54,14 +59,38 @@ int main() {
     // generate random nums for matrix nxn
     generate_rand_matrix(X, n);
 
+    // 
+    pthread_t threads[num_threads];
+    ThreadData data[num_threads];
+
+    int cols_per_thread = n / num_threads;
+
+    print_matrix_preview(X, n, n, 20);
+    printf("===\n");
+
     // take note of time_before
     time_before = clock();
 
+    for (int i = 0; i < num_threads; i++) {
+        data[i].X = X;
+        data[i].rows = n;
+        data[i].init_col = i * cols_per_thread;
+        data[i].end_col = (i == num_threads - 1) ? n : (i + 1) * cols_per_thread;
+
+        pthread_create(&threads[i], NULL, zsn_thread, &data[i]);
+    } 
+
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
     // do the calculations; Transform X via zsn();
-    zsn(X, n, n);
+    // zsn(X, n, n);
 
     // take note of time_after after running zsn
     time_after = clock();
+
+    print_matrix_preview(X, n, n, 20);
 
     time_elapsed = ((double)(time_after - time_before)) / CLOCKS_PER_SEC;
     printf("Time elapsed: %.6f\n", time_elapsed);
@@ -106,7 +135,7 @@ void free_matrix(double **X, int n) {
 void generate_rand_matrix(double **X, int n) {
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            X[i][j] = (double)(rand() % 2000 + 1);
+            X[i][j] = (double)(rand() % 100 + 1);
         }
     }
 }
@@ -114,7 +143,7 @@ void generate_rand_matrix(double **X, int n) {
 void zsn(double **X, int r, int c) {
     for (int i = 0; i < c; i++) {
         double a = compute_col_mean(X, r, i);
-        double b = compute_col_std(X, r, c, a);
+        double b = compute_col_std(X, r, i, a);
 
         for (int j = 0; j < r; j++) {
             if (b != 0.0) {
@@ -143,18 +172,34 @@ void compute_col_stats(double **X, int r, int c, double *mean, double *std) {
     *std = sqrt(S / r);
 }
 
-void zsn_welford(double **X, int r, int c) {
-    for (int i = 0; i < c; i++) {
-        double a,b;
+void *zsn_thread(void *arg) {
+    ThreadData *data = (ThreadData *)arg;
+    
+    for (int i = data->init_col; i < data->end_col; i++) {
+        double a, b;
 
-        compute_col_stats(X, r, i, &a, &b);
+        compute_col_stats(data->X, data->rows, i, &a, &b);
 
-        for (int j = 0; j < r; j++) {
+        // transform column
+        for (int j = 0; j < data->rows; j++) {
             if (b != 0.0) {
-                X[j][i] = (X[j][i] - a) / b;
+                data->X[j][i] = (data->X[j][i] - a) / b;
             } else {
-                X[j][i] = 0.0;
+                data->X[j][i] = 0.0;
             }
         }
+    }
+
+    return NULL;
+}
+
+void print_matrix_preview(double **X, int r, int c, int limit) {
+    int rr = (r < limit) ? r : limit;
+    int cc = (c < limit) ? c : limit;
+
+    for (int i = 0; i < rr; i++) {
+        for (int j = 0; j < cc; j++)
+            printf("%8.4f ", X[i][j]);
+        printf("\n");
     }
 }
