@@ -39,6 +39,8 @@ int main() {
     // time variables
     clock_t time_before, time_after;
     double time_elapsed;
+    // time vars for threaded processes
+    struct timespec start, end;
 
     printf("Z-Score Normalization for n x n Matrix\n");
     printf("Enter n-size for matrix: ");
@@ -59,18 +61,20 @@ int main() {
     // generate random nums for matrix nxn
     generate_rand_matrix(X, n);
 
-    // 
+    // create threads
     pthread_t threads[num_threads];
     ThreadData data[num_threads];
 
     int cols_per_thread = n / num_threads;
 
-    print_matrix_preview(X, n, n, 20);
-    printf("===\n");
+    // print_matrix_preview(X, n, n, 20);
+    // printf("===\n");
 
     // take note of time_before
-    time_before = clock();
+    // time_before = clock();
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
+    // assign values for each threads and perform zsn_thread() for each
     for (int i = 0; i < num_threads; i++) {
         data[i].X = X;
         data[i].rows = n;
@@ -88,11 +92,13 @@ int main() {
     // zsn(X, n, n);
 
     // take note of time_after after running zsn
-    time_after = clock();
+    // time_after = clock();
+    clock_gettime(CLOCK_MONOTONIC, &end);
 
-    print_matrix_preview(X, n, n, 20);
+    // print_matrix_preview(X, n, n, 20);
 
-    time_elapsed = ((double)(time_after - time_before)) / CLOCKS_PER_SEC;
+    // time_elapsed = ((double)(time_after - time_before)) / CLOCKS_PER_SEC;
+    time_elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
     printf("Time elapsed: %.6f\n", time_elapsed);
 
     free_matrix(X, n);
@@ -140,6 +146,7 @@ void generate_rand_matrix(double **X, int n) {
     }
 }
 
+// LRP01 initial implementation
 void zsn(double **X, int r, int c) {
     for (int i = 0; i < c; i++) {
         double a = compute_col_mean(X, r, i);
@@ -155,16 +162,22 @@ void zsn(double **X, int r, int c) {
     }
 }
 
+// LRP02 optimized implementation
+// calculated mean and standard deviation in one for loop using Welford's algorithm
 void compute_col_stats(double **X, int r, int c, double *mean, double *std) {
+    // running mean and sum of squared differences from current mean
     double M = 0.0;
     double S = 0.0;
 
     for (int i = 0; i < r; i++) {
         double x = X[i][c];
+        // difference from old mean
         double delta = x - M;
-
+        // update mean
         M += delta / (i + 1);
+        // difference from new mean
         double delta2 = x - M;
+        // update sum of squared differences
         S += delta * delta2;
     }
 
