@@ -8,5 +8,5 @@ Exercise 01: Computing a serial solution to a given problem P
 Description
 - Run the program by typing:
 ```
-$ gcc TERWEL_JB_code.c -lm && ./a.out
+$ gcc lab0#.c -lm && ./a.out
 ```
