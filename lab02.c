@@ -22,7 +22,7 @@ void zsn(double **X, int r, int c);
 
 void compute_col_stats(double **X, int r, int c, double *mean, double *std);
 void *zsn_thread(void *arg);
-void zsn_optimized(double **X, int r, int c);
+void *zsn_optimized(void *arg);
 void print_matrix_preview(double **X, int r, int c, int limit);
 
 // thread structure for data computation
@@ -81,8 +81,8 @@ int main() {
         data[i].init_col = i * cols_per_thread;
         data[i].end_col = (i == num_threads - 1) ? n : (i + 1) * cols_per_thread;
 
-        pthread_create(&threads[i], NULL, zsn_thread, &data[i]);
-        // pthread_create(&threads[i], NULL, zsn_optimized, &data[i]);
+        // pthread_create(&threads[i], NULL, zsn_thread, &data[i]);
+        pthread_create(&threads[i], NULL, zsn_optimized, &data[i]);
     } 
 
     for (int i = 0; i < num_threads; i++) {
@@ -208,40 +208,42 @@ void *zsn_thread(void *arg) {
 }
 
 // fully optimized zsn()
-// void zsn_optimized(double **X, int r, int c) {
-//     for (int i = 0; i < c; i++) {
-//         double sum = 0.0;
-//         double sum_sq = 0.0;
+void *zsn_optimized(void *arg) {
+    ThreadData *data = (ThreadData *)arg;
 
-//         // compute for statistics in single-pass
-//         for (int j = 0; j < r; j++) {
-//             double val = X[j][i];
-//             sum += val;
-//             sum += val * val;
-//         }
+    for (int i = data->init_col; i < data->end_col; i++) {
+        double sum = 0.0;
+        double sum_sq = 0.0;
 
-//         double mean = sum / r;
-//         double variance = (sum_sq / r) - (mean  * mean);
+        // compute for statistics in single-pass
+        for (int j = 0; j < data->rows; j++) {
+            double val = data->X[j][i];
+            sum += val;
+            sum += val * val;
+        }
 
-//         if (variance < 0.0) {
-//             variance = 0.0;
-//         }
+        double mean = sum / data->rows;
+        double variance = (sum_sq / data->rows) - (mean  * mean);
 
-//         double std = sqrt(variance);
+        if (variance < 0.0) {
+            variance = 0.0;
+        }
 
-//         // Transform with optimized division (multiplication)
-//         if (std != 0.0) {
-//             double inv_std = 1.0 / std;
-//             for (int j = 0; j < r; j++) {
-//                 X[j][i] = (X[j][i] - mean) * inv_std;
-//             }
-//         } else {
-//             for (int j = 0; j < r; j++) {
-//                 X[j][i] = 0.0;
-//             }
-//         }
-//     }
-// }
+        double std = sqrt(variance);
+
+        // Transform with optimized division (multiplication)
+        if (std != 0.0) {
+            double inv_std = 1.0 / std;
+            for (int j = 0; j < data->rows; j++) {
+                data->X[j][i] = (data->X[j][i] - mean) * inv_std;
+            }
+        } else {
+            for (int j = 0; j < data->rows; j++) {
+                data->X[j][i] = 0.0;
+            }
+        }
+    }
+}
 
 void print_matrix_preview(double **X, int r, int c, int limit) {
     int rr = (r < limit) ? r : limit;
