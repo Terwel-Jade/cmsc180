@@ -1,7 +1,7 @@
 // Accept n inputs from user
 // Create a nxn matrix with random ints. Generate random ints within the program
 // Take note its time_before
-// Transfrom X via a call to the func zsn_optimized(X, n, n)
+// Transfrom X via a call to the func zsn(X, n, n)
 // Take note of time_after calc
 // Obtain elapsed time:: time_elapsed := time_after - time_before
 // Show/output elapsed time
@@ -11,12 +11,17 @@
 #include <math.h>
 #include <time.h>
 #include <pthread.h>
-#include <linux/time.h>
 
 // function prototypes
+double compute_col_mean(double **X, int r, int c);
+double compute_col_std(double **X, int r, int c, double mean);
 double** allocate_matrix(int n);
 void free_matrix(double **X, int n);
 void generate_rand_matrix(double **X, int n);
+void zsn(double **X, int r, int c);
+
+void compute_col_stats(double **X, int r, int c, double *mean, double *std);
+void *zsn_thread(void *arg);
 void *zsn_optimized(void *arg);
 void print_matrix_preview(double **X, int r, int c, int limit);
 
@@ -142,6 +147,66 @@ void generate_rand_matrix(double **X, int n) {
     }
 }
 
+// LRP01 initial implementation
+void zsn(double **X, int r, int c) {
+    for (int i = 0; i < c; i++) {
+        double a = compute_col_mean(X, r, i);
+        double b = compute_col_std(X, r, i, a);
+
+        for (int j = 0; j < r; j++) {
+            if (b != 0.0) {
+                X[j][i] = (X[j][i] - a) / b;
+            } else {
+                X[j][i] = 0.0;
+            }
+        }
+    }
+}
+
+// LRP02 optimized implementation
+// calculated mean and standard deviation in one for loop using Welford's algorithm
+void compute_col_stats(double **X, int r, int c, double *mean, double *std) {
+    // running mean and sum of squared differences from current mean
+    double M = 0.0;
+    double S = 0.0;
+
+    for (int i = 0; i < r; i++) {
+        double x = X[i][c];
+        // difference from old mean
+        double delta = x - M;
+        // update mean
+        M += delta / (i + 1);
+        // difference from new mean
+        double delta2 = x - M;
+        // update sum of squared differences
+        S += delta * delta2;
+    }
+
+    *mean = M;
+    *std = sqrt(S / r);
+}
+
+void *zsn_thread(void *arg) {
+    ThreadData *data = (ThreadData *)arg;
+    
+    for (int i = data->init_col; i < data->end_col; i++) {
+        double a, b;
+
+        compute_col_stats(data->X, data->rows, i, &a, &b);
+
+        // transform column
+        for (int j = 0; j < data->rows; j++) {
+            if (b != 0.0) {
+                data->X[j][i] = (data->X[j][i] - a) / b;
+            } else {
+                data->X[j][i] = 0.0;
+            }
+        }
+    }
+
+    return NULL;
+}
+
 // fully optimized zsn()
 void *zsn_optimized(void *arg) {
     ThreadData *data = (ThreadData *)arg;
@@ -178,8 +243,6 @@ void *zsn_optimized(void *arg) {
             }
         }
     }
-    
-    return NULL;
 }
 
 void print_matrix_preview(double **X, int r, int c, int limit) {
