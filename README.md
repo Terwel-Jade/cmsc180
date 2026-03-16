@@ -1,4 +1,4 @@
-Exercise 01: Computing a serial solution to a given problem P
+Exercise 02: Runtime-efficient threaded parallel solution to P
 - Student Description
 - Author: Jade Brian Terwel
 - Student Number: 2023-02343
