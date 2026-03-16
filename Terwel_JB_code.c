@@ -47,18 +47,24 @@ typedef struct {
     int thread_id;
 } RowThreadData;
 
-int main() {
+int main(int argc, char *argv[]) {
     int n, num_threads;
     clock_t time_before, time_after;
     double time_elapsed;
     struct timespec start, end;
 
     printf("Z-Score Normalization for n x n Matrix\n");
-    printf("Enter n-size for matrix: ");
-    scanf("%d", &n);
 
-    printf("Enter number of threads: ");
-    scanf("%d", &num_threads);
+    if (argc == 3) {
+        n = atoi(argv[1]);
+        num_threads = atoi(argv[2]);
+    } else {
+        printf("Enter n-size for matrix: ");
+        scanf("%d", &n);
+
+        printf("Enter number of threads: ");
+        scanf("%d", &num_threads);
+    }
 
     // check if n is positive
     if (n <= 0 || num_threads <= 0) return 1;
