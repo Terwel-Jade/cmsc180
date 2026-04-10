@@ -1,19 +1,19 @@
 #!/bin/bash
 
 # 
-SOURCE_CODE="Terwel_JB_code.c"
-EXECUTABLE="a.out"
-MATRIX_SIZE=200
-THREADS=16
+SOURCE_CODE="lab01.c"
+EXECUTABLE="lab01"
+MATRIX_SIZE=25000
+THREADS=8
 RUNS=3
 
 #
-gcc "$SOURCE_CODE" -lm -o "$EXECUTABLE"
+gcc -o "$EXECUTABLE" "$SOURCE_CODE" -lm
 #
 for ((i=1; i<=RUNS; i++))
 do
     echo "---------------------------"
-    ./$EXECUTABLE $MATRIX_SIZE $THREADS
+    ./$EXECUTABLE $MATRIX_SIZE
 
     # check if program crashed
     if [ $? -ne 0 ]; then

@@ -19,16 +19,21 @@ void free_matrix(double **X, int n);
 void generate_rand_matrix(double **X, int n);
 void zsn(double **X, int r, int c);
 
-int main() {
+int main(int argc, char *argv[]) {
     // n is the user input variable
     int n;
     // time variables
     clock_t time_before, time_after;
     double time_elapsed;
 
+    
     printf("Z-Score Normalization for n x n Matrix\n");
-    printf("Enter n-size for matrix: ");
-    scanf("%d", &n);
+    if (argc == 2) {
+        n = atoi(argv[1]);
+    } else {
+        printf("Enter n-size for matrix: ");
+        scanf("%d", &n);
+    }
 
     // check if n is positive
     if (n < 0) return 1;

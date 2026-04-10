@@ -80,71 +80,71 @@ int main(int argc, char *argv[]) {
 
         // <-- COLUMN PARTITIONING -->    
         // create threads
-        double **X_col = copy_matrix(X, n);
+        // double **X_col = copy_matrix(X, n);
 
-        pthread_t col_threads[num_threads];
-        ColThreadData col_data[num_threads];
+        // pthread_t col_threads[num_threads];
+        // ColThreadData col_data[num_threads];
 
-        int cols_per_thread = n / num_threads;
+        // int cols_per_thread = n / num_threads;
 
-        // take note of time_before
-        clock_gettime(CLOCK_MONOTONIC, &start);
-
-        // assign values for each threads and perform zsn_optimized() for each
-        for (int i = 0; i < num_threads; i++) {
-            col_data[i].X = X_col;
-            col_data[i].rows = n;
-            col_data[i].init_col = i * cols_per_thread;
-            col_data[i].end_col = (i == num_threads - 1) ? n : (i + 1) * cols_per_thread;
-            col_data[i].thread_id = i;
-
-            // pthread_create(&threads[i], NULL, zsn_optimized, &data[i]);
-            pthread_create(&col_threads[i], NULL, zsn_col_partition, &col_data[i]);
-        } 
-
-        for (int i = 0; i < num_threads; i++) {
-            pthread_join(col_threads[i], NULL);
-        }
-
-        // take note of time_after after running zsn
-        clock_gettime(CLOCK_MONOTONIC, &end);
-
-        // print_matrix_preview(X, n, n, 20);
-
-        time_elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
-        printf("Time elapsed for column-wise: %.6f\n", time_elapsed);
-
-        // <--- ROW PARTITIONING --->
-        // double **X_row = copy_matrix(X, n);
-
-        // pthread_t row_threads[num_threads];
-        // RowThreadData row_data[num_threads];
-
-        // int rows_per_thread = n / num_threads;
-
+        // // take note of time_before
         // clock_gettime(CLOCK_MONOTONIC, &start);
 
+        // // assign values for each threads and perform zsn_optimized() for each
         // for (int i = 0; i < num_threads; i++) {
-        //     row_data[i].X = X_row;
-        //     row_data[i].cols = n;
-        //     row_data[i].init_row = i * rows_per_thread;
-        //     row_data[i].end_row = (i == num_threads - 1) ? n : (i + 1) * rows_per_thread;
-        //     row_data[i].thread_id = i;
+        //     col_data[i].X = X_col;
+        //     col_data[i].rows = n;
+        //     col_data[i].init_col = i * cols_per_thread;
+        //     col_data[i].end_col = (i == num_threads - 1) ? n : (i + 1) * cols_per_thread;
+        //     col_data[i].thread_id = i;
 
-        //     pthread_create(&row_threads[i], NULL, zsn_row_partition, &row_data[i]);
+        //     // pthread_create(&threads[i], NULL, zsn_optimized, &data[i]);
+        //     pthread_create(&col_threads[i], NULL, zsn_col_partition, &col_data[i]);
+        // } 
+
+        // for (int i = 0; i < num_threads; i++) {
+        //     pthread_join(col_threads[i], NULL);
         // }
 
-        // for (int i = 0; i < num_threads; i++) {
-        //     pthread_join(row_threads[i], NULL);
-        // }
-
+        // // take note of time_after after running zsn
         // clock_gettime(CLOCK_MONOTONIC, &end);
+
+        // // print_matrix_preview(X, n, n, 20);
+
         // time_elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
-        // printf("Time elapsed for row-wise: %.6f\n", time_elapsed);
+        // printf("Time elapsed for column-wise: %.6f\n", time_elapsed);
+
+        // <--- ROW PARTITIONING --->
+        double **X_row = copy_matrix(X, n);
+
+        pthread_t row_threads[num_threads];
+        RowThreadData row_data[num_threads];
+
+        int rows_per_thread = n / num_threads;
+
+        clock_gettime(CLOCK_MONOTONIC, &start);
+
+        for (int i = 0; i < num_threads; i++) {
+            row_data[i].X = X_row;
+            row_data[i].cols = n;
+            row_data[i].init_row = i * rows_per_thread;
+            row_data[i].end_row = (i == num_threads - 1) ? n : (i + 1) * rows_per_thread;
+            row_data[i].thread_id = i;
+
+            pthread_create(&row_threads[i], NULL, zsn_row_partition, &row_data[i]);
+        }
+
+        for (int i = 0; i < num_threads; i++) {
+            pthread_join(row_threads[i], NULL);
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        time_elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+        printf("Time elapsed for row-wise: %.6f\n", time_elapsed);
 
         free_matrix(X, n);
-        free_matrix(X_col, n);
-        // free_matrix(X_row, n);
+        // free_matrix(X_col, n);
+        free_matrix(X_row, n);
     // }
 
     return 0;    

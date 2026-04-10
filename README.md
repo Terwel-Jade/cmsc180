@@ -1,4 +1,4 @@
-Exercise 02: Runtime-efficient threaded parallel solution to P
+Exercise 3: Core-affine threaded parallel solution to P
 - Student Description
 - Author: Jade Brian Terwel
 - Student Number: 2023-02343
@@ -8,5 +8,5 @@ Exercise 02: Runtime-efficient threaded parallel solution to P
 Description
 - Run the program by typing:
 ```
-$ gcc lab0#.c -lm && ./a.out
+$ gcc Terwel_JB_code.c -lm && ./a.out
 ```
