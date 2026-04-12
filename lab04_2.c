@@ -45,6 +45,8 @@ typedef struct {
     char role[16];   /* "master" or "slave" */
     char ip[64];
     int  port;
+    char user[64];   /* SSH username, e.g. "pi" or "student" (optional) */
+    char path[256];  /* remote path to lab04 binary dir        (optional) */
 } PeerInfo;
 
 /* ──────────────────────────── matrix helpers ──────────────────────────── */
@@ -84,17 +86,26 @@ static int read_config(PeerInfo peers[], int max) {
     FILE *f = fopen(CONFIG_FILE, "r");
     if (!f) { perror("fopen config"); exit(1); }
     int count = 0;
-    char line[256];
+    char line[512];
     while (count < max && fgets(line, sizeof(line), f)) {
         /* skip blank lines and comment lines starting with '#' */
         char *p = line;
         while (*p == ' ' || *p == '\t') p++;
         if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0')
             continue;
-        if (sscanf(p, "%15s %63s %d",
-                   peers[count].role,
-                   peers[count].ip,
-                   &peers[count].port) == 3)
+
+        /* Initialize optional fields */
+        peers[count].user[0] = '\0';
+        peers[count].path[0] = '\0';
+
+        /* Try extended format: role ip port user remotepath */
+        int matched = sscanf(p, "%15s %63s %d %63s %255s",
+                             peers[count].role,
+                             peers[count].ip,
+                             &peers[count].port,
+                             peers[count].user,
+                             peers[count].path);
+        if (matched >= 3)
             count++;
     }
     fclose(f);
@@ -169,6 +180,48 @@ static int connect_to(const char *ip, int port) {
 }
 
 /* ══════════════════════════════════════════════════════════════
+ *  SSH REMOTE LAUNCH (optional)
+ *  Launches slave instances on remote PCs via SSH.
+ *  Requires:
+ *    - SSH key-based auth set up (no password prompt)
+ *    - lab04 binary + config.txt already copied to remote path
+ *  config.txt extended format for SSH:
+ *    slave <ip> <port> <user> <remote_path>
+ *  Example:
+ *    slave 192.168.1.11 5001 student /home/student/lab04
+ * ══════════════════════════════════════════════════════════════ */
+static void ssh_launch_slaves(PeerInfo slaves[], int t, int n) {
+    for (int i = 0; i < t; i++) {
+        /* Skip if no SSH info provided */
+        if (slaves[i].user[0] == '\0' || slaves[i].path[0] == '\0') {
+            printf("[MASTER] No SSH info for slave %d — assuming manually started.\n", i);
+            continue;
+        }
+
+        /* Build SSH command:
+           ssh -o StrictHostKeyChecking=no <user>@<ip>
+               "cd <path> && nohup ./lab04 <n> <port> 1 > slave_<port>.log 2>&1 &"
+        */
+        char cmd[512];
+        snprintf(cmd, sizeof(cmd),
+            "ssh -o StrictHostKeyChecking=no %s@%s "
+            "\"cd %s && nohup ./lab04 %d %d 1 > slave_%d.log 2>&1 &\"",
+            slaves[i].user, slaves[i].ip,
+            slaves[i].path,
+            n, slaves[i].port, slaves[i].port);
+
+        printf("[MASTER] Launching slave %d via SSH: %s\n", i, cmd);
+        int ret = system(cmd);
+        if (ret != 0)
+            fprintf(stderr, "[MASTER] Warning: SSH launch for slave %d may have failed.\n", i);
+    }
+
+    /* Give slaves a moment to start listening */
+    printf("[MASTER] Waiting 2s for slaves to start...\n");
+    sleep(2);
+}
+
+/* ══════════════════════════════════════════════════════════════
  *  MASTER LOGIC
  * ══════════════════════════════════════════════════════════════ */
 static void run_master(int n) {
@@ -184,6 +237,9 @@ static void run_master(int n) {
 
     if (t == 0) { fprintf(stderr, "No slaves in config.\n"); exit(1); }
     printf("[MASTER] Found %d slave(s) in config.\n", t);
+
+    /* Optionally launch slaves via SSH if config includes user+path */
+    ssh_launch_slaves(slaves, t, n);
 
     /* 2. Create random n×n matrix M */
     srand(time(NULL));
@@ -301,18 +357,15 @@ static void run_slave(int port) {
     close(sfd);
 }
 
+/* ──────────────────────────── core affinity ──────────────────────────── */
 #include <sched.h>
 
-// You'd call this early in run_slave(), using the port number (or slave index) to determine which core to pin to.
 static void pin_process_to_core(int core_id) {
     int num_cores = (int)sysconf(_SC_NPROCESSORS_ONLN);
     core_id = core_id % num_cores;
-
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(core_id, &cpuset);
-
-    // 0 means "this process"
     if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0)
         perror("sched_setaffinity");
 }
@@ -340,8 +393,11 @@ int main(int argc, char *argv[]) {
 
     if (role == 0)
         run_master(n);
-    else
+    else {
+        /* Pin slave process to a core derived from its port number */
+        pin_process_to_core(port);
         run_slave(port);
+    }
 
     return 0;
 }
