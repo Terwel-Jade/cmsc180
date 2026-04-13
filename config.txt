@@ -20,11 +20,16 @@
 # slave  192.168.1.12 5001 student /home/student/lab04
 
 # ── Active config (same PC, uncomment one block above or edit below) ──
+# PC 49/50
 master 10.0.4.33 5000
+# PC 47/50
 slave  10.0.4.69 5001
+# PC 48/50
 slave  10.0.4.238 5002
-#slave  127.0.0.1 5003
-#slave  127.0.0.1 5004
+# PC 43/50
+slave  10.0.4.140 5003
+# PC 42/50
+slave  10.0.4.50 5004
 #slave  127.0.0.1 5005
 #slave  127.0.0.1 5006
 #slave  127.0.0.1 5007
