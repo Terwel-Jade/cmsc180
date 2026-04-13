@@ -49,6 +49,8 @@ typedef struct {
     char path[256];  /* remote path to lab04 binary dir        (optional) */
 } PeerInfo;
 
+void save_runtime(double time);
+
 /* ──────────────────────────── matrix helpers ──────────────────────────── */
 static double **alloc_matrix(int rows, int cols) {
     double **M = malloc(rows * sizeof(double *));
@@ -245,7 +247,7 @@ static void run_master(int n) {
     srand(time(NULL));
     double **M = alloc_matrix(n, n);
     gen_rand_matrix(M, n, n);
-    print_matrix(M, n, n, "Full matrix M (master)");
+    // print_matrix(M, n, n, "Full matrix M (master)");
 
     /* 3. Compute sub-matrix row range for each slave
           rows per slave = n/t  (last slave gets remainder) */
@@ -352,6 +354,8 @@ static void run_slave(int port) {
     print_matrix(sub, sub_rows, cols, label);
     printf("\n[SLAVE  port=%d] time_elapsed = %.6f seconds\n", port, elapsed);
 
+    save_runtime(elapsed);
+
     free_matrix(sub, sub_rows);
     close(cfd);
     close(sfd);
@@ -368,6 +372,31 @@ static void pin_process_to_core(int core_id) {
     CPU_SET(core_id, &cpuset);
     if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0)
         perror("sched_setaffinity");
+}
+
+// save run time and export a file in the slave pc's
+void save_runtime(double time) {
+    char filename[64];
+    int counter = 1;
+
+    // Check if result_1.txt exists, if so try result_2.txt, etc.
+    // access(file, F_OK) returns 0 if the file exists
+    do {
+        sprintf(filename, "runtime_%d.txt", counter++);
+    } while (access(filename, F_OK) == 0);
+
+    // Now 'filename' contains the first available name (e.g., runtime_3.txt)
+    FILE *fptr = fopen(filename, "w");
+
+    if (fptr == NULL) {
+        printf("Error: Could not create file %s\n", filename);
+        return;
+    }
+
+    fprintf(fptr, "Execution Time: %.6f seconds\n", time);
+    fclose(fptr);
+    
+    // printf("Runtime saved to %s\n", filename);
 }
 
 /* ──────────────────────────── main ──────────────────────────── */
@@ -395,7 +424,7 @@ int main(int argc, char *argv[]) {
         run_master(n);
     else {
         /* Pin slave process to a core derived from its port number */
-        pin_process_to_core(port);
+        // pin_process_to_core(port);
         run_slave(port);
     }
 
