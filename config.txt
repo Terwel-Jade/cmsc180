@@ -1,5 +1,39 @@
-master 127.0.0.1 5000
-slave  127.0.0.1 5001
-slave  127.0.0.1 5002
-slave  127.0.0.1 5003
- 
+# ── Same PC (localhost) setup ──────────────────────────────────────────
+# Format (basic):   role  ip            port
+# Format (SSH):     role  ip            port  ssh_user  remote_path
+#
+# master 127.0.0.1 5000
+# slave  127.0.0.1 5001
+# slave  127.0.0.1 5002
+# slave  127.0.0.1 5003
+
+# ── Multi-PC setup (no SSH auto-launch) ───────────────────────────────
+# master 192.168.1.10 5000
+# slave  192.168.1.11 5001
+# slave  192.168.1.12 5001
+
+# ── Multi-PC setup (WITH SSH auto-launch) ─────────────────────────────
+# The master will SSH into each slave PC and start the process for you.
+# Requires: SSH key-based auth + lab04 binary already on each slave PC.
+# master 192.168.1.10 5000
+# slave  192.168.1.11 5001 student /home/student/lab04
+# slave  192.168.1.12 5001 student /home/student/lab04
+
+# ── Active config (same PC, uncomment one block above or edit below) ──
+master 10.0.4.33 5000
+slave  10.0.4.69 5001
+slave  10.0.4.238 5002
+#slave  127.0.0.1 5003
+#slave  127.0.0.1 5004
+#slave  127.0.0.1 5005
+#slave  127.0.0.1 5006
+#slave  127.0.0.1 5007
+#slave  127.0.0.1 5008
+#slave  127.0.0.1 5009
+#slave  127.0.0.1 5010
+#slave  127.0.0.1 5011
+#slave  127.0.0.1 5012
+#slave  127.0.0.1 5013
+#slave  127.0.0.1 5014
+#slave  127.0.0.1 5015
+#slave  127.0.0.1 5016
