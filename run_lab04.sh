@@ -20,7 +20,9 @@ do
     ./$BINARY $SIZE 5000 0 | sed $'s/.*/\\e[32m&\\e[0m/'
 
     wait
-done#!/bin/bash
+done
+
+#!/bin/bash
 
 DIRECTORY="Desktop/temp"
 BINARY="lab04"

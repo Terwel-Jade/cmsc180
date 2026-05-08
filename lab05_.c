@@ -1,26 +1,11 @@
-// lab05 - Distributed Z-Score Normalization  (parallel send + receive)
-//
-// Extends lab04 to:
-//   (1) Slave computes Z-Score Normalization column-wise on its submatrix of X,
-//       producing its part of matrix T.
-//   (2) Slave sends its part of T back to master.
-//   (3) Master times from before distributing X to after rebuilding full T.
-//   (4) Slave times ONLY the Z-Score computation (after rx, before tx).
-//
-// Parallel improvement (vs original lab05):
-//   - Master pre-splits all X submatrices into flat buffers BEFORE timing.
-//   - One pthread per slave handles: connect → send X → receive T → store.
-//   - Master clock covers ONLY the parallel network phase.
-//
-// Build :  gcc -O2 -o lab05 lab05.c -lm -lpthread
-// Config:  config.txt
-//            master  <ip>   <port>
-//            slave   <ip>   <port>
-//            ...
-// Usage :  ./lab05 <n> <p> <s>
-//            n  matrix size (n x n)
-//            p  port number this process listens / connects on
-//            s  0 = master   1 = slave
+// lab04 extended version
+// Accept n inputs from user, port number p, and role s (0=master, 1=slave)
+// Read config.txt to find slave IPs and ports (for master) or master IP (for slave)
+// Master creates random n x n matrix M, computes submatrix ranges for each slave
+// Master time_before, create threads per slave, distribute submatrices to slaves, build matrix T, time_after
+// Slave time_before, receive submatrix, compute ZSN column-wise, send part of matrix T to master, time_after
+// Display received submatrix and elapsed time on slave side
+// Show/output elapsed time
 
 #define _POSIX_C_SOURCE 200112L
 #define _GNU_SOURCE
@@ -38,68 +23,56 @@
 #include <pthread.h>
 #include <sched.h>
 
-/* ------------------------------------------------------------------ */
-/*  Peer info                                                          */
-/* ------------------------------------------------------------------ */
+// Structure for peer information (master/slave)
 typedef struct {
     char role[16];
     char ip[64];
     int  port;
 } PeerInfo;
 
-/* ------------------------------------------------------------------ */
-/*  Per-slave task (one per pthread)                                   */
-/*                                                                     */
-/*  send_buf  : pre-split flat X submatrix  (input,  owned by master) */
-/*  recv_buf  : flat T submatrix buffer     (output, allocated here)  */
-/* ------------------------------------------------------------------ */
+// Per-slave task structure for master to track each slave's info, buffers, and result
+// Note: master pre-splits X into send_buf before spawning threads; slave fills recv_buf and master reads it after join.
 typedef struct {
-    /* identity */
+    // identification of the slave
     int  slave_idx;
     char ip[64];
     int  port;
 
-    /* dimensions */
+    // dimensions of the submatrix being sent/received
     int  sub_rows;
     int  cols;
 
-    /* data */
-    double *send_buf;   /* X submatrix — filled before thread spawned  */
-    double *recv_buf;   /* T submatrix — malloc'd by thread, read after join */
+    // buffers for communication (master fills send_buf before thread starts; slave fills recv_buf, read by master after join)
+    double *send_buf;   // pre-flattened X submatrix (malloc'd by master before thread start)
+    double *recv_buf;   // flat buffer to receive T submatrix (malloc'd by slave thread after receiving dimensions)
 
-    /* result: 0 = ok, -1 = error */
+    // result of the exchange: 0=success, -1=failure (e.g., connection issues, dimension mismatch)
     int result;
 } SlaveTask;
 
-/* ------------------------------------------------------------------ */
-/*  Matrix helpers                                                     */
-/* ------------------------------------------------------------------ */
-static double **alloc_matrix(int rows, int cols)
-{
+// Matrix helpers
+static double **alloc_matrix(int rows, int cols) {
     double **M = malloc(rows * sizeof(double *));
     if (!M) { perror("malloc"); exit(1); }
     for (int i = 0; i < rows; i++) {
         M[i] = malloc(cols * sizeof(double));
-        if (!M[i]) { perror("malloc"); exit(1); }
+        if (!M[i]) { perror("malloc"); exit(1); } // added error check for each row allocation
     }
     return M;
 }
 
-static void free_matrix(double **M, int rows)
-{
+static void free_matrix(double **M, int rows) {
     for (int i = 0; i < rows; i++) free(M[i]);
     free(M);
 }
 
-static void gen_rand_matrix(double **M, int rows, int cols)
-{
+static void gen_rand_matrix(double **M, int rows, int cols) {
     for (int i = 0; i < rows; i++)
         for (int j = 0; j < cols; j++)
             M[i][j] = (double)(rand() % 100 + 1);
 }
 
-static void print_matrix(double **M, int rows, int cols, const char *label)
-{
+static void print_matrix(double **M, int rows, int cols, const char *label) {
     printf("\n--- %s (%d x %d) ---\n", label, rows, cols);
     int rlim = (rows < 8) ? rows : 8;
     int clim = (cols < 8) ? cols : 8;
@@ -112,34 +85,32 @@ static void print_matrix(double **M, int rows, int cols, const char *label)
     if (rows > rlim) printf("  ... (%d more rows)\n", rows - rlim);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Z-Score Normalization (column-wise on a submatrix)                */
-/* ------------------------------------------------------------------ */
-static void zscore_normalize(double **X, double **T, int rows, int cols)
-{
+// Z-Score Normalization: T[i][j] = (X[i][j] - mean_j) / stddev_j
+// Handles zero stddev by setting T[i][j] = 0.0 for that column
+// Core computation to be timed on slave node
+static void zscore_normalize(double **X, double **T, int rows, int cols) {
     for (int j = 0; j < cols; j++) {
         double mean = 0.0;
-        for (int i = 0; i < rows; i++)
+        for (int i = 0; i < rows; i++) {
             mean += X[i][j];
-        mean /= rows;
+        }
+        mean /= rows;                           // column mean
 
         double variance = 0.0;
         for (int i = 0; i < rows; i++) {
             double diff = X[i][j] - mean;
             variance += diff * diff;
         }
-        double std = sqrt(variance / rows);
+        double std = sqrt(variance / rows);     // column stddev
 
-        for (int i = 0; i < rows; i++)
+        for (int i = 0; i < rows; i++) {        // Z-Score normalization with zero-stddev handling
             T[i][j] = (std < 1e-12) ? 0.0 : (X[i][j] - mean) / std;
+        }
     }
 }
 
-/* ------------------------------------------------------------------ */
-/*  Config reader                                                      */
-/* ------------------------------------------------------------------ */
-static int read_config(PeerInfo peers[], int max)
-{
+// Config reader: reads config.txt, fills peers array, returns count of valid entries
+static int read_config(PeerInfo peers[], int max) {
     FILE *f = fopen("config.txt", "r");
     if (!f) { perror("fopen config.txt"); exit(1); }
 
@@ -160,11 +131,10 @@ static int read_config(PeerInfo peers[], int max)
     return count;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Socket helpers                                                     */
-/* ------------------------------------------------------------------ */
-static int send_all(int fd, const void *buf, size_t len)
-{
+// Socket helpers for sending/receiving all bytes, making server socket, and connecting to peer
+
+// Send exactly len bytes, handling partial sends
+static int send_all(int fd, const void *buf, size_t len) {
     const char *p = buf;
     size_t sent = 0;
     while (sent < len) {
@@ -175,8 +145,8 @@ static int send_all(int fd, const void *buf, size_t len)
     return 0;
 }
 
-static int recv_all(int fd, void *buf, size_t len)
-{
+// Receive exactly len bytes, handling partial receives
+static int recv_all(int fd, void *buf, size_t len) {
     char *p = buf;
     size_t got = 0;
     while (got < len) {
@@ -187,13 +157,16 @@ static int recv_all(int fd, void *buf, size_t len)
     return 0;
 }
 
-static int make_server_socket(int port)
-{
-    int sfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sfd < 0) { perror("socket"); exit(1); }
+// Create a server socket that listens on the specified port
+static int make_server_socket(int port) {
+    int sfd = socket(AF_INET, SOCK_STREAM, 0);                      // TCP socket
+    if (sfd < 0) { 
+        perror("socket"); 
+        exit(1); 
+    }
 
     int opt = 1;
-    setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));   // allow quick reuse of the port
 
     struct sockaddr_in addr = {0};
     addr.sin_family      = AF_INET;
@@ -201,16 +174,24 @@ static int make_server_socket(int port)
     addr.sin_port        = htons(port);
 
     if (bind(sfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("bind"); exit(1);
+        perror("bind"); 
+        exit(1);                                                    // bind to the port
     }
-    if (listen(sfd, 64) < 0) { perror("listen"); exit(1); }
-    return sfd;
+
+    if (listen(sfd, 64) < 0) {                                      // listen for incoming connections 
+        perror("listen"); 
+        exit(1); 
+    }
+    return sfd;                                         // return the listening socket file descriptor  
 }
 
-static int connect_to(const char *ip, int port)
-{
+// Connect to a remote peer at the specified IP and port, with retries
+static int connect_to(const char *ip, int port) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) { perror("socket"); exit(1); }
+    if (fd < 0) { 
+        perror("socket"); 
+        exit(1); 
+    }
 
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
@@ -219,7 +200,7 @@ static int connect_to(const char *ip, int port)
         fprintf(stderr, "Invalid IP: %s\n", ip); exit(1);
     }
 
-    for (int attempt = 0; attempt < 10; attempt++) {
+    for (int attempt = 0; attempt < 10; attempt++) {        // try to connect, with retries
         if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0)
             return fd;
         fprintf(stderr, "[MASTER] Retrying connection to %s:%d (%d/10)...\n",
@@ -230,11 +211,8 @@ static int connect_to(const char *ip, int port)
     exit(1);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Core-affinity helper (for slaves)                                 */
-/* ------------------------------------------------------------------ */
-static void pin_process_to_core(int core_id)
-{
+// Pin the current process to a specific CPU core of the slave node machine
+static void pin_process_to_core(int core_id) {
     int num_cores = (int)sysconf(_SC_NPROCESSORS_ONLN);
     if (num_cores <= 1) return;
 
@@ -244,23 +222,15 @@ static void pin_process_to_core(int core_id)
     CPU_ZERO(&cpuset);
     CPU_SET(core_id, &cpuset);
 
-    if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0)
+    if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0) {
         perror("sched_setaffinity (non-fatal)");
-    else
+    } else {
         printf("[SLAVE] Pinned to CPU core %d (of %d)\n", core_id, num_cores);
+    }
 }
 
-/* ================================================================== */
-/*  Thread worker                                                      */
-/*                                                                     */
-/*  For one slave:                                                     */
-/*    1. connect                                                       */
-/*    2. send header + flat X submatrix buffer                        */
-/*    3. receive header + flat T submatrix into recv_buf              */
-/*    4. validate dimensions, store result                            */
-/* ================================================================== */
-static void *slave_exchange_thread(void *arg)
-{
+// Thread function for master to exchange data with one slave: connect, send X submatrix, receive T submatrix, store result
+static void *slave_exchange_thread(void *arg) {
     SlaveTask *task = (SlaveTask *)arg;
     task->result    = -1;
 
@@ -268,13 +238,14 @@ static void *slave_exchange_thread(void *arg)
     printf("[MASTER] [thread slave=%d] Connected to %s:%d\n",
            task->slave_idx, task->ip, task->port);
 
-    /* ---- send X submatrix ---- */
+    // Send X submatrix to slave: first send header with dimensions, then send flat data buffer
     int32_t hdr_out[2] = { htonl(task->sub_rows), htonl(task->cols) };
     if (send_all(fd, hdr_out, sizeof(hdr_out)) < 0) {
         fprintf(stderr, "[thread slave=%d] send header failed\n", task->slave_idx);
         close(fd); return NULL;
     }
 
+    // Send the pre-flattened X submatrix data buffer
     size_t data_bytes = (size_t)task->sub_rows * task->cols * sizeof(double);
     if (send_all(fd, task->send_buf, data_bytes) < 0) {
         fprintf(stderr, "[thread slave=%d] send X data failed\n", task->slave_idx);
@@ -283,7 +254,7 @@ static void *slave_exchange_thread(void *arg)
     printf("[MASTER] [thread slave=%d] X submatrix sent (%d x %d)\n",
            task->slave_idx, task->sub_rows, task->cols);
 
-    /* ---- receive T submatrix ---- */
+    // Receive T submatrix from slave: first receive header with dimensions, then receive flat data buffer
     int32_t hdr_in[2];
     if (recv_all(fd, hdr_in, sizeof(hdr_in)) < 0) {
         fprintf(stderr, "[thread slave=%d] recv T header failed\n", task->slave_idx);
@@ -293,6 +264,7 @@ static void *slave_exchange_thread(void *arg)
     int rx_rows = ntohl(hdr_in[0]);
     int rx_cols = ntohl(hdr_in[1]);
 
+    // Check dimensions match what we expect for this slave's submatrix
     if (rx_rows != task->sub_rows || rx_cols != task->cols) {
         fprintf(stderr,
                 "[thread slave=%d] dimension mismatch: expected %dx%d got %dx%d\n",
@@ -300,9 +272,12 @@ static void *slave_exchange_thread(void *arg)
         close(fd); return NULL;
     }
 
-    /* Allocate recv_buf — master reads it after pthread_join */
+    // Allocate recv_buf to hold the incoming T submatrix data
     task->recv_buf = malloc(data_bytes);
-    if (!task->recv_buf) { perror("malloc recv_buf"); close(fd); return NULL; }
+    if (!task->recv_buf) { 
+        perror("malloc recv_buf"); 
+        close(fd); return NULL; 
+    }
 
     if (recv_all(fd, task->recv_buf, data_bytes) < 0) {
         fprintf(stderr, "[thread slave=%d] recv T data failed\n", task->slave_idx);
@@ -319,37 +294,37 @@ static void *slave_exchange_thread(void *arg)
     return NULL;
 }
 
-/* ================================================================== */
-/*  MASTER                                                             */
-/*                                                                     */
-/*  Phase 1 (pre-timing): generate X, pre-split into flat buffers.   */
-/*  Phase 2 (timed):      spawn threads → join → copy T into place.  */
-/* ================================================================== */
-static void run_master(int n)
-{
-    /* ---- read config ---- */
+// Master logic: read config, generate X, pre-split into send_bufs, 
+// spawn threads to exchange with slaves, join threads, rebuild T, display results and timing
+static void run_master(int n) {
+    // Read config to find slave IPs and ports
     PeerInfo peers[64];
     int total = read_config(peers, 64);
 
+    // Extract slave info into a separate array for convenience
     PeerInfo slaves[64];
     int t = 0;
-    for (int i = 0; i < total; i++)
+    for (int i = 0; i < total; i++) {
         if (strcmp(peers[i].role, "slave") == 0)
             slaves[t++] = peers[i];
+    }
 
-    if (t == 0) { fprintf(stderr, "No slaves found in config.txt\n"); exit(1); }
+    if (t == 0) { 
+        fprintf(stderr, "No slaves found in config.txt\n"); 
+        exit(1); 
+    }
     printf("[MASTER] n=%d | slaves=%d\n", n, t);
 
-    /* ---- generate random matrix X ---- */
+    // Generate random matrix X of size n x n
     srand((unsigned)time(NULL));
     double **X = alloc_matrix(n, n);
     gen_rand_matrix(X, n, n);
     print_matrix(X, n, n, "Matrix X (master, original)");
 
-    /* ---- allocate full T to be rebuilt ---- */
+    // Allocate matrix T to hold the final result after gathering from slaves
     double **T = alloc_matrix(n, n);
 
-    /* ---- compute row-partition boundaries ---- */
+    // Compute row ranges for each slave: base_rows per slave, last slave gets remainder
     int base_rows  = n / t;
     int row_starts[64];
     int row_counts[64];
@@ -362,9 +337,7 @@ static void run_master(int n)
         }
     }
 
-    /* ==============================================================
-     * PHASE 1 — Pre-split X into per-slave flat buffers (pre-timing)
-     * ============================================================== */
+    // Prepare SlaveTask structures for each slave, including pre-flattening the X submatrices into send_bufs
     SlaveTask tasks[64];
     memset(tasks, 0, sizeof(tasks));
 
@@ -384,7 +357,7 @@ static void run_master(int n)
         tasks[s].send_buf = malloc(bytes);
         if (!tasks[s].send_buf) { perror("malloc send_buf"); exit(1); }
 
-        /* flatten: row-major copy */
+        // Pre-flatten the X submatrix for this slave into the send_buf (row-major order)
         for (int r = 0; r < sub_rows; r++)
             memcpy(tasks[s].send_buf + (size_t)r * n,
                    X[row_start + r],
@@ -394,12 +367,11 @@ static void run_master(int n)
                s, row_start, row_start + sub_rows, sub_rows, n);
     }
 
-    /* ==============================================================
-     * PHASE 2 — Parallel exchange: start clock, spawn, join, stop
-     * ============================================================== */
+    // time_before — start of parallel exchange with slaves (connect, send X, receive T)
     struct timespec t_before, t_after;
     clock_gettime(CLOCK_MONOTONIC, &t_before);
 
+    // Spawn threads to handle communication with each slave in parallel
     pthread_t threads[64];
     for (int s = 0; s < t; s++) {
         if (pthread_create(&threads[s], NULL, slave_exchange_thread, &tasks[s]) != 0) {
@@ -407,14 +379,14 @@ static void run_master(int n)
         }
     }
 
+    // Join threads to wait for all slave exchanges to complete before proceeding to rebuild T
     for (int s = 0; s < t; s++)
         pthread_join(threads[s], NULL);
 
     clock_gettime(CLOCK_MONOTONIC, &t_after);
 
-    /* ==============================================================
-     * Rebuild T from per-slave flat recv_bufs
-     * ============================================================== */
+    // Rebuild matrix T from the received submatrices using the row_starts and row_counts 
+    // to place each submatrix in the correct location
     for (int s = 0; s < t; s++) {
         if (tasks[s].result != 0 || !tasks[s].recv_buf) {
             fprintf(stderr, "[MASTER] slave %d failed — T may be incomplete.\n", s);
@@ -423,16 +395,17 @@ static void run_master(int n)
         int sub_rows  = row_counts[s];
         int row_start = row_starts[s];
 
-        for (int r = 0; r < sub_rows; r++)
+        for (int r = 0; r < sub_rows; r++) {
             memcpy(T[row_start + r],
                    tasks[s].recv_buf + (size_t)r * n,
                    n * sizeof(double));
+        }
     }
 
     double elapsed = (t_after.tv_sec  - t_before.tv_sec) +
                      (t_after.tv_nsec - t_before.tv_nsec) * 1e-9;
 
-    /* ---- display results ---- */
+    // Display the fully rebuilt T matrix and timing results
     print_matrix(T, n, n, "Matrix T (master, fully rebuilt Z-Score)");
 
     printf("\n[MASTER] Parallel exchange summary:\n");
@@ -443,82 +416,72 @@ static void run_master(int n)
     printf("[MASTER] time_elapsed (parallel distribute X → rebuild T) = %.6f seconds\n",
            elapsed);
 
-    /* ---- cleanup ---- */
+    // Cleanup: free allocated buffers and matrices
     for (int s = 0; s < t; s++) {
         free(tasks[s].send_buf);
-        free(tasks[s].recv_buf);   /* NULL-safe */
+        free(tasks[s].recv_buf); 
     }
     free_matrix(X, n);
     free_matrix(T, n);
 }
 
-/* ================================================================== */
-/*  SLAVE — unchanged in behaviour                                     */
-/*                                                                     */
-/*  Protocol:                                                          */
-/*    MASTER --> SLAVE :  hdr[sub_rows, n]  +  X submatrix data       */
-/*    (time_before)                                                    */
-/*    compute T = zscore(X_sub)                                       */
-/*    (time_after)  --> report time_elapsed                           */
-/*    SLAVE  --> MASTER:  hdr[sub_rows, n]  +  T submatrix data       */
-/*                                                                     */
-/*  Timing: ONLY the Z-Score computation kernel.                      */
-/* ================================================================== */
-static void run_slave(int port)
-{
+// Slave logic: read config to find master IP, listen for connection, 
+// receive X submatrix, compute Z-Score, send T submatrix back, display results and timing
+static void run_slave(int port) {
+    // Read config to find master IP (for display/verification)
     PeerInfo peers[64];
     int total = read_config(peers, 64);
     char master_ip[64] = "unknown";
-    for (int i = 0; i < total; i++)
+    for (int i = 0; i < total; i++) {
         if (strcmp(peers[i].role, "master") == 0) {
             strncpy(master_ip, peers[i].ip, sizeof(master_ip) - 1);
             break;
         }
+    }
     printf("[SLAVE  port=%d] Master IP from config: %s\n", port, master_ip);
 
+    // Set up server socket to listen for master's connection
     int sfd = make_server_socket(port);
     printf("[SLAVE  port=%d] Listening...\n", port);
 
+    // Accept connection from master
     struct sockaddr_in cli_addr;
     socklen_t cli_len = sizeof(cli_addr);
     int cfd = accept(sfd, (struct sockaddr *)&cli_addr, &cli_len);
     if (cfd < 0) { perror("accept"); exit(1); }
 
+    // Get master's IP for display
     char peer_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &cli_addr.sin_addr, peer_ip, sizeof(peer_ip));
     printf("[SLAVE  port=%d] Master connected from %s\n", port, peer_ip);
 
-    /* ---- receive X submatrix ---- */
+    // Receive X submatrix from master: first receive header with dimensions, then receive row by row
     int32_t hdr[2];
     recv_all(cfd, hdr, sizeof(hdr));
     int sub_rows = ntohl(hdr[0]);
-    int cols     = ntohl(hdr[1]);
+    int cols = ntohl(hdr[1]);
     printf("[SLAVE  port=%d] Receiving X submatrix %d x %d\n", port, sub_rows, cols);
 
+    // Allocate buffer for X submatrix and receive it row by row
     double **X_sub = alloc_matrix(sub_rows, cols);
-    for (int r = 0; r < sub_rows; r++)
+    for (int r = 0; r < sub_rows; r++) {
         recv_all(cfd, X_sub[r], cols * sizeof(double));
-
+    }
     printf("[SLAVE  port=%d] X submatrix received.\n", port);
 
+    // Display received X submatrix for verification
     char lbl_x[80];
     snprintf(lbl_x, sizeof(lbl_x), "X submatrix received (slave port=%d)", port);
     print_matrix(X_sub, sub_rows, cols, lbl_x);
 
-    /* ---- allocate T submatrix ---- */
+    // Allocate buffer for T submatrix (same dimensions as X submatrix) to hold the Z-Score results
     double **T_sub = alloc_matrix(sub_rows, cols);
 
-    /* ================================================================
-     * time_before — ONLY the computation
-     * ================================================================ */
     struct timespec t_before, t_after;
     clock_gettime(CLOCK_MONOTONIC, &t_before);
 
     zscore_normalize(X_sub, T_sub, sub_rows, cols);
 
-    /* ================================================================
-     * time_after — computation done, before sending T
-     * ================================================================ */
     clock_gettime(CLOCK_MONOTONIC, &t_after);
 
     double elapsed = (t_after.tv_sec  - t_before.tv_sec) +
@@ -531,13 +494,13 @@ static void run_slave(int port)
     printf("\n[SLAVE  port=%d] time_elapsed (Z-Score computation ONLY) = %.6f seconds\n",
            port, elapsed);
 
-    /* ---- send T submatrix back to master ---- */
+    // Send T submatrix back to master
     int32_t hdr_out[2] = { htonl(sub_rows), htonl(cols) };
     send_all(cfd, hdr_out, sizeof(hdr_out));
 
-    for (int r = 0; r < sub_rows; r++)
+    for (int r = 0; r < sub_rows; r++) {
         send_all(cfd, T_sub[r], cols * sizeof(double));
-
+    }
     printf("[SLAVE  port=%d] T submatrix sent back to master.\n", port);
 
     free_matrix(X_sub, sub_rows);
@@ -546,11 +509,8 @@ static void run_slave(int port)
     close(sfd);
 }
 
-/* ================================================================== */
-/*  main                                                               */
-/* ================================================================== */
-int main(int argc, char *argv[])
-{
+// Main program entry point
+int main(int argc, char *argv[]) {
     if (argc != 4) {
         fprintf(stderr,
             "Usage: %s <n> <p> <s>\n"
